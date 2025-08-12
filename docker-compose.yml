@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: auth_user
+      POSTGRES_PASSWORD: auth_pass
+      POSTGRES_DB: auth_center
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U auth_user -d auth_center"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  auth-center:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      HOST: 0.0.0.0
+      ENV: development
+      PG_CONNECTION_STRING: postgresql://auth_user:auth_pass@postgres:5432/auth_center
+      REDIS_URL: redis://redis:6379
+      WECHAT_WEB_APPID: ${WECHAT_WEB_APPID}
+      WECHAT_WEB_APPSECRET: ${WECHAT_WEB_APPSECRET}
+      WECHAT_REDIRECT_URI: ${WECHAT_REDIRECT_URI:-https://auth.xiaojinpro.com/auth/wechat/callback}
+      ISSUER: ${ISSUER:-https://auth.xiaojinpro.com}
+      JWT_ACCESS_TOKEN_EXPIRES: 15m
+      JWT_REFRESH_TOKEN_EXPIRES: 30d
+      CORS_ORIGIN: https://xiaojinpro.com,https://*.xiaojinpro.com,http://localhost:3000
+      RATE_LIMIT_MAX: 100
+      RATE_LIMIT_WINDOW: 60000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
