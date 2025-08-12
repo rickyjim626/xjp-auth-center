@@ -28,6 +28,8 @@ yarn-error.log*
 .DS_Store
 .idea/
 .vscode/
+*.swp
+*.swo
 
 # Package managers cache
 .pnpm-store/
@@ -38,6 +40,15 @@ auth-center.swp
 # Local tooling / generated
 .turbo/
 .vercel/
+
+# Lint / TS build info
+.eslintcache
+*.tsbuildinfo
+
+# Certificates / keys (avoid accidental commits)
+*.pem
+*.key
+*.crt
 
 # Project-specific
 .specstory/
