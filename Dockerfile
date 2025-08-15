@@ -10,8 +10,9 @@ COPY tsconfig.json ./
 # Install dependencies
 RUN npm ci
 
-# Copy source code
+# Copy source code and scripts
 COPY src ./src
+COPY scripts ./scripts
 
 # Build application
 RUN npm run build
@@ -35,23 +36,25 @@ COPY package*.json ./
 RUN npm ci --omit=dev && \
     npm cache clean --force
 
-# Copy built application
+# Copy built application and scripts
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/scripts ./scripts
 COPY package.json ./
 
 # Switch to non-root user
 USER nodejs
 
-# Set default environment variables for TCB
+# Set default environment variables
 ENV NODE_ENV=production \
     PORT=3000 \
     HOST=0.0.0.0 \
-    USE_SECRET_STORE=false
+    DATABASE_PROVIDER=mysql \
+    REDIS_ENABLED=false
 
 # Expose port
 EXPOSE 3000
 
-# Health check for TCB
+# Health check
 # initialDelaySeconds must be >= app startup time
 HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health/ready', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"
@@ -59,5 +62,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start application
-CMD ["node", "dist/index.tcb.js"]
+# Start application (can be overridden for different deployment targets)
+CMD ["node", "dist/index.js"]

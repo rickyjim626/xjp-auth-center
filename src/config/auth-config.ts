@@ -17,12 +17,21 @@ const authConfigSchema = z.object({
     port: z.number().default(3000),
     host: z.string().default('0.0.0.0'),
   }),
+  database: z.object({
+    provider: z.enum(['tcb', 'mysql']).default('mysql'),
+    url: z.string().optional(), // MySQL connection string
+    migrateOnStartup: z.boolean().default(false),
+  }),
   tcb: z.object({
     envId: z.string(),
     secretId: z.string(),
     secretKey: z.string(),
     sessionToken: z.string().optional(),
     region: z.string().default('ap-shanghai'),
+  }),
+  redis: z.object({
+    enabled: z.boolean().default(false),
+    url: z.string().optional(),
   }),
   wechat: z.object({
     // 开放平台网站应用（PC扫码登录）
@@ -38,8 +47,10 @@ const authConfigSchema = z.object({
   }),
   jwt: z.object({
     issuer: z.string(),
+    algorithm: z.literal('RS256').default('RS256'), // 锁定算法
     kid: z.string().default('kid-2025-01'),
     privateKey: z.string(),
+    privateKeyB64: z.string().optional(), // Base64 编码的私钥
     publicKey: z.string().optional(),
     publicJwks: z.any().optional(),
     accessTokenExpires: z.string().default('15m'),
@@ -218,6 +229,11 @@ class ConfigLoader {
         port: parseInt(process.env.PORT || '3000'),
         host: process.env.HOST || '0.0.0.0',
       },
+      database: {
+        provider: (process.env.DB_TYPE === 'mysql' || process.env.DB_URL) ? 'mysql' : 'tcb',
+        url: process.env.DB_URL,
+        migrateOnStartup: process.env.MIGRATE_ON_STARTUP === 'true',
+      },
       tcb: {
         envId: process.env.TCB_ENV_ID || 'xiaojinpro-5ghvhq9v9875c1ea',
         secretId: process.env.TENCENTCLOUD_SECRETID || '',
@@ -225,9 +241,13 @@ class ConfigLoader {
         sessionToken: process.env.TENCENTCLOUD_SESSIONTOKEN,
         region: process.env.TCB_REGION || 'ap-shanghai',
       },
+      redis: {
+        enabled: process.env.REDIS_ENABLED === 'true',
+        url: process.env.REDIS_URL,
+      },
       wechat: {
-        openAppId: process.env.WECHAT_OPEN_APPID || '',
-        openAppSecret: process.env.WECHAT_OPEN_SECRET || '',
+        openAppId: process.env.WECHAT_OPEN_APPID || process.env.WECHAT_WEB_APPID || '',
+        openAppSecret: process.env.WECHAT_OPEN_SECRET || process.env.WECHAT_WEB_APPSECRET || '',
         mpAppId: process.env.WECHAT_MP_APPID || '',
         mpAppSecret: process.env.WECHAT_MP_SECRET || '',
         redirectUri: process.env.WECHAT_REDIRECT_URI || 'https://auth.xiaojinpro.com/wechat/callback',
@@ -235,8 +255,12 @@ class ConfigLoader {
       },
       jwt: {
         issuer: process.env.ISSUER || 'https://auth.xiaojinpro.com',
+        algorithm: 'RS256' as const,
         kid: process.env.JWT_KID || 'kid-2025-01',
-        privateKey: process.env.JWT_PRIVATE_KEY?.replace(/\\n/g, '\n') || '',
+        privateKey: process.env.JWT_PRIVATE_KEY_B64 
+          ? Buffer.from(process.env.JWT_PRIVATE_KEY_B64, 'base64').toString('utf-8')
+          : process.env.JWT_PRIVATE_KEY?.replace(/\\n/g, '\n') || '',
+        privateKeyB64: process.env.JWT_PRIVATE_KEY_B64,
         publicKey: process.env.JWT_PUBLIC_KEY?.replace(/\\n/g, '\n'),
         accessTokenExpires: process.env.JWT_ACCESS_TOKEN_EXPIRES || '15m',
         refreshTokenExpires: process.env.JWT_REFRESH_TOKEN_EXPIRES || '30d',

@@ -1,22 +1,31 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:15-alpine
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
     environment:
-      POSTGRES_USER: auth_user
-      POSTGRES_PASSWORD: auth_pass
-      POSTGRES_DB: auth_center
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: auth_center
+      MYSQL_USER: auth_user
+      MYSQL_PASSWORD: auth_password
+      MYSQL_CHARACTER_SET_SERVER: utf8mb4
+      MYSQL_COLLATION_SERVER: utf8mb4_unicode_ci
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
+      - ./scripts/mysql-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U auth_user -d auth_center"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "auth_user", "-pauth_password"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+    networks:
+      - auth-network
 
+  # Redis Cache
   redis:
     image: redis:7-alpine
     ports:
@@ -26,35 +35,66 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 3s
+      retries: 3
+    networks:
+      - auth-network
 
+  # Auth Center Application
   auth-center:
     build: .
     ports:
-      - "3001:3001"
+      - "3000:3000"
     environment:
-      PORT: 3001
+      NODE_ENV: development
+      PORT: 3000
       HOST: 0.0.0.0
-      ENV: development
-      PG_CONNECTION_STRING: postgresql://auth_user:auth_pass@postgres:5432/auth_center
+      DATABASE_PROVIDER: mysql
+      DATABASE_URL: mysql://auth_user:auth_password@mysql:3306/auth_center
+      REDIS_ENABLED: true
       REDIS_URL: redis://redis:6379
-      WECHAT_WEB_APPID: ${WECHAT_WEB_APPID}
-      WECHAT_WEB_APPSECRET: ${WECHAT_WEB_APPSECRET}
-      WECHAT_REDIRECT_URI: ${WECHAT_REDIRECT_URI:-https://auth.xiaojinpro.com/auth/wechat/callback}
-      ISSUER: ${ISSUER:-https://auth.xiaojinpro.com}
+      WECHAT_MP_APP_ID: ${WECHAT_MP_APP_ID:-}
+      WECHAT_MP_APP_SECRET: ${WECHAT_MP_APP_SECRET:-}
+      WECHAT_OPEN_APP_ID: ${WECHAT_OPEN_APP_ID:-}
+      WECHAT_OPEN_APP_SECRET: ${WECHAT_OPEN_APP_SECRET:-}
+      ISSUER: ${ISSUER:-http://localhost:3000}
       JWT_ACCESS_TOKEN_EXPIRES: 15m
       JWT_REFRESH_TOKEN_EXPIRES: 30d
-      CORS_ORIGIN: https://xiaojinpro.com,https://*.xiaojinpro.com,http://localhost:3000
+      CORS_ORIGIN: http://localhost:3000,https://xiaojinpro.com,https://*.xiaojinpro.com
       RATE_LIMIT_MAX: 100
       RATE_LIMIT_WINDOW: 60000
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      # Mount scripts for migration in development
+      - ./scripts:/app/scripts:ro
     restart: unless-stopped
+    networks:
+      - auth-network
+
+  # Optional: MySQL Admin (phpMyAdmin) - run with: docker-compose --profile admin up
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    ports:
+      - "8080:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: auth_user
+      PMA_PASSWORD: auth_password
+    depends_on:
+      - mysql
+    profiles:
+      - admin
+    networks:
+      - auth-network
 
 volumes:
-  postgres_data:
+  mysql_data:
   redis_data:
+
+networks:
+  auth-network:
+    driver: bridge

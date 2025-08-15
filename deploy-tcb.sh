@@ -116,44 +116,35 @@ deploy_console() {
     echo "6. 选择【镜像拉取】"
     echo "7. 镜像地址：${IMAGE_URL}"
     echo "8. 端口：3000"
-    echo "9. 环境变量：点击【JSON导入】，粘贴以下内容："
+    echo "9. 启动命令：node dist/index.tcb.js"
+    echo "10. 环境变量：点击【JSON导入】，粘贴以下内容："
     echo ""
     cat <<EOF
 {
   "NODE_ENV": "production",
   "PORT": "3000",
   "HOST": "0.0.0.0",
-  "USE_SECRET_STORE": "false",
-  "ISSUER": "https://auth.xiaojinpro.com",
-  "TCB_ENV_ID": "${ENV_ID}",
-  "TCB_REGION": "${REGION}",
-  "MIGRATE_ON_STARTUP": "true",
+  "DATABASE_PROVIDER": "tcb",
+  "CLOUDBASE_ENV_ID": "${ENV_ID}",
+  "CLOUDBASE_SECRET_ID": "${TENCENTCLOUD_SECRETID}",
+  "CLOUDBASE_SECRET_KEY": "${TENCENTCLOUD_SECRETKEY}",
   "REDIS_ENABLED": "false",
-  "WECHAT_OPEN_APPID": "${WECHAT_OPEN_APPID}",
-  "WECHAT_OPEN_SECRET": "${WECHAT_OPEN_SECRET}",
-  "WECHAT_MP_APPID": "${WECHAT_MP_APPID}",
-  "WECHAT_MP_SECRET": "${WECHAT_MP_SECRET}",
-  "WECHAT_REDIRECT_URI": "https://auth.xiaojinpro.com/wechat/callback",
-  "USE_UNIONID": "true",
-  "JWT_PRIVATE_KEY": "${JWT_PRIVATE_KEY}",
-  "JWT_KID": "kid-2025-01",
+  "ISSUER": "https://auth.xiaojinpro.com",
+  "WECHAT_MP_APP_ID": "${WECHAT_MP_APPID}",
+  "WECHAT_MP_APP_SECRET": "${WECHAT_MP_SECRET}",
+  "WECHAT_OPEN_APP_ID": "${WECHAT_OPEN_APPID}",
+  "WECHAT_OPEN_APP_SECRET": "${WECHAT_OPEN_SECRET}",
   "JWT_ACCESS_TOKEN_EXPIRES": "15m",
   "JWT_REFRESH_TOKEN_EXPIRES": "30d",
-  "JWT_ID_TOKEN_EXPIRES": "1h",
-  "COOKIE_SECRET": "${COOKIE_SECRET}",
-  "COOKIE_SECURE": "true",
-  "COOKIE_SAME_SITE": "lax",
-  "SESSION_EXPIRES": "86400000",
-  "REQUIRE_PKCE": "true",
-  "AUTH_CODE_EXPIRES": "600",
+  "OIDC_AUTH_CODE_EXPIRES": "600",
+  "OIDC_REQUIRE_PKCE": "true",
   "CORS_ORIGIN": "https://xiaojinpro.com,https://*.xiaojinpro.com",
   "RATE_LIMIT_MAX": "100",
-  "RATE_LIMIT_WINDOW": "60000",
-  "CSRF_PROTECTION": "true"
+  "RATE_LIMIT_WINDOW": "60000"
 }
 EOF
     echo ""
-    echo "10. 高级配置："
+    echo "11. 高级配置："
     echo "    - 初始延迟时间：30秒"
     echo "    - 健康检查路径：/health/ready"
     echo "    - CPU：0.5核"
@@ -161,7 +152,7 @@ EOF
     echo "    - 最小实例数：1"
     echo "    - 最大实例数：3"
     echo ""
-    echo "11. 点击【部署】"
+    echo "12. 点击【部署】"
     echo ""
     echo -e "${GREEN}部署完成后，访问：https://auth.xiaojinpro.com/.well-known/openid-configuration 验证${NC}"
 }
