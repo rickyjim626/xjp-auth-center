@@ -10,6 +10,8 @@ interface WeChatTokenResponse {
   openid: string;
   scope: string;
   unionid?: string;
+  errcode?: number;
+  errmsg?: string;
 }
 
 interface WeChatUserInfo {
@@ -22,6 +24,8 @@ interface WeChatUserInfo {
   headimgurl: string;
   privilege: string[];
   unionid?: string;
+  errcode?: number;
+  errmsg?: string;
 }
 
 export class WeChatServiceTCB {
@@ -53,24 +57,19 @@ export class WeChatServiceTCB {
     const loginId = generateLoginId();
     const expiresIn = 300; // 5 minutes
 
-    // Store login ticket
-    const expiresAt = new Date(Date.now() + expiresIn * 1000);
-    await insertOne('login_states', {
+    // Construct WeChat QR URL for PC scanning with embedded clientId/redirectUri in state
+    const state = JSON.stringify({ 
       loginId,
-      status: 'PENDING',
-      clientId,
-      redirectUri,
-      expiresAt,
-      createdAt: new Date(),
+      clientId: clientId || 'xjp-web',
+      redirectUri: redirectUri || 'https://xiaojinpro.com/callback',
     });
 
-    // Construct WeChat QR URL
     const params = new URLSearchParams({
-      appid: config.wechat.appId,
+      appid: config.wechat.openAppId,
       redirect_uri: config.wechat.redirectUri,
       response_type: 'code',
       scope: 'snsapi_login',
-      state: loginId,
+      state: Buffer.from(state).toString('base64'),
     });
 
     const qrUrl = `https://open.weixin.qq.com/connect/qrconnect?${params.toString()}#wechat_redirect`;
@@ -84,35 +83,25 @@ export class WeChatServiceTCB {
     };
   }
 
-  async handleCallback(code: string, state: string): Promise<{
+  async handleCallback(code: string, state: string, isFromMP: boolean = false): Promise<{
     userId: string;
     unionid?: string;
     openid: string;
     authCode: string;
   }> {
-    const db = await this.getDb();
     const now = new Date();
 
-    // Validate login ticket
-    const ticket = await findOne('login_states', {
-      loginId: state,
-      status: 'PENDING',
-      expiresAt: db._.gt(now),
-    });
-
-    if (!ticket) {
-      throw new Error('Invalid or expired login ticket');
+    // Decode state to get clientId and redirectUri
+    let stateData: any;
+    try {
+      const decoded = Buffer.from(state, 'base64').toString('utf-8');
+      stateData = JSON.parse(decoded);
+    } catch (error) {
+      throw new Error('Invalid state parameter');
     }
 
-    // Update ticket status
-    await updateOne(
-      'login_states',
-      { loginId: state },
-      { status: 'AUTHORIZED', authorizedAt: now }
-    );
-
     // Exchange code for access token
-    const tokenData = await this.exchangeCodeForToken(code);
+    const tokenData = await this.exchangeCodeForToken(code, isFromMP);
 
     // Get user info (optional, for display name and avatar)
     let userInfo: WeChatUserInfo | null = null;
@@ -126,18 +115,7 @@ export class WeChatServiceTCB {
     const userId = await this.findOrCreateUser(tokenData, userInfo);
 
     // Generate auth code for token exchange
-    const authCode = await this.generateAuthCode(userId, ticket.clientId, ticket.redirectUri);
-
-    // Update ticket with success
-    await updateOne(
-      'login_states',
-      { loginId: state },
-      { 
-        status: 'SUCCESS', 
-        result: { authCode, userId },
-        completedAt: now,
-      }
-    );
+    const authCode = await this.generateAuthCode(userId, stateData.clientId, stateData.redirectUri);
 
     return {
       userId,
@@ -147,23 +125,31 @@ export class WeChatServiceTCB {
     };
   }
 
-  private async exchangeCodeForToken(code: string): Promise<WeChatTokenResponse> {
+  private async exchangeCodeForToken(code: string, isFromMP: boolean = false): Promise<WeChatTokenResponse> {
     const config = await getConfig();
     const url = new URL('https://api.weixin.qq.com/sns/oauth2/access_token');
-    url.searchParams.append('appid', config.wechat.appId);
-    url.searchParams.append('secret', config.wechat.appSecret);
+    
+    // Use different app credentials based on source
+    if (isFromMP) {
+      url.searchParams.append('appid', config.wechat.mpAppId);
+      url.searchParams.append('secret', config.wechat.mpAppSecret);
+    } else {
+      url.searchParams.append('appid', config.wechat.openAppId);
+      url.searchParams.append('secret', config.wechat.openAppSecret);
+    }
+    
     url.searchParams.append('code', code);
     url.searchParams.append('grant_type', 'authorization_code');
 
     const response = await fetch(url.toString());
-    const data = await response.json();
+    const data = (await response.json()) as WeChatTokenResponse;
 
     if (data.errcode) {
       logger.error({ error: data }, 'WeChat token exchange failed');
       throw new Error(`WeChat API error: ${data.errmsg}`);
     }
 
-    return data as WeChatTokenResponse;
+    return data;
   }
 
   private async getUserInfo(accessToken: string, openid: string): Promise<WeChatUserInfo> {
@@ -173,26 +159,26 @@ export class WeChatServiceTCB {
     url.searchParams.append('lang', 'zh_CN');
 
     const response = await fetch(url.toString());
-    const data = await response.json();
+    const data = (await response.json()) as WeChatUserInfo;
 
     if (data.errcode) {
       throw new Error(`WeChat API error: ${data.errmsg}`);
     }
 
-    return data as WeChatUserInfo;
+    return data;
   }
 
   private async findOrCreateUser(
     tokenData: WeChatTokenResponse,
     userInfo: WeChatUserInfo | null
   ): Promise<string> {
-    const db = await this.getDb();
-
+    const config = await getConfig();
+    
     // First try to find by unionid if available
-    if (tokenData.unionid) {
+    if (tokenData.unionid && config.wechat.useUnionId) {
       const identity = await findOne('identities', {
+        provider: 'wechat',
         unionid: tokenData.unionid,
-        provider: 'wechat_open_web',
       });
 
       if (identity) {
@@ -203,8 +189,8 @@ export class WeChatServiceTCB {
 
     // Try to find by openid
     const identity = await findOne('identities', {
+      provider: 'wechat',
       openid: tokenData.openid,
-      provider: 'wechat_open_web',
     });
 
     if (identity) {
@@ -236,47 +222,29 @@ export class WeChatServiceTCB {
     const transaction = await db.startTransaction();
 
     try {
-      // Create user
+      // Create user (simplified with isAdmin flag)
       const userId = await transaction.collection('users').add({
         displayName: userInfo?.nickname || `User_${tokenData.openid.slice(-6)}`,
-        avatarUrl: userInfo?.headimgurl || null,
+        email: null,
+        avatar: userInfo?.headimgurl || null,
+        isAdmin: false,
         isDisabled: false,
         createdAt: now,
         lastLoginAt: now,
       });
 
-      // Create identity
+      // Create identity (simplified with openid field)
       await transaction.collection('identities').add({
         userId: userId.id,
-        provider: 'wechat_open_web',
+        provider: 'wechat',
         openid: tokenData.openid,
         unionid: tokenData.unionid || null,
-        raw: { tokenData, userInfo },
+        profile: {
+          nickname: userInfo?.nickname,
+          headimgurl: userInfo?.headimgurl,
+          rawData: { tokenData, userInfo }
+        },
         createdAt: now,
-      });
-
-      // Assign default role
-      const role = await transaction.collection('roles')
-        .where({ name: 'user' })
-        .limit(1)
-        .get();
-
-      if (role.data && role.data.length > 0) {
-        await transaction.collection('user_roles').add({
-          userId: userId.id,
-          roleId: role.data[0]._id,
-          grantedAt: now,
-        });
-      }
-
-      // Audit log
-      await transaction.collection('audits').add({
-        actor: userId.id,
-        action: 'user.create',
-        resource: `user:${userId.id}`,
-        status: 'success',
-        ts: now,
-        extra: { provider: 'wechat_open_web', openid: tokenData.openid },
       });
 
       await transaction.commit();
@@ -309,28 +277,12 @@ export class WeChatServiceTCB {
       clientId: clientId || 'xjp-web',
       userId,
       redirectUri: redirectUri || 'https://xiaojinpro.com/callback',
+      scopes: ['openid', 'profile'],
       expiresAt,
-      used: false,
       createdAt: now,
     });
 
     return code;
-  }
-
-  async getLoginTicketStatus(loginId: string): Promise<{
-    status: string;
-    result?: any;
-  }> {
-    const ticket = await findOne('login_states', { loginId });
-
-    if (!ticket) {
-      return { status: 'NOT_FOUND' };
-    }
-
-    return {
-      status: ticket.status,
-      result: ticket.result,
-    };
   }
 }
 

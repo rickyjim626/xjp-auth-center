@@ -8,12 +8,17 @@ export interface TCBConfig {
   sessionToken?: string;
 }
 
+// Type definitions using inference
+export type TcbDb = any; // TCB Database type
+export type TcbCollection<T = any> = any; // TCB Collection type
+export type TcbTransaction = any; // TCB Transaction type
+
 export class TCBDatabase {
   private static instance: TCBDatabase;
-  private app: tcb.CloudBase;
-  private database: tcb.Database;
-  public readonly db: tcb.Database;
-  public readonly _: typeof tcb.Database.command;
+  private app: any;
+  private database: any;
+  public readonly db: any;
+  public readonly _: any; // Command object
 
   private constructor(config: TCBConfig) {
     this.app = tcb.init({
@@ -26,7 +31,7 @@ export class TCBDatabase {
 
     this.database = this.app.database();
     this.db = this.database;
-    this._ = tcb.database.command;
+    this._ = (this.database as any).command;
   }
 
   static async initialize(config: TCBConfig): Promise<TCBDatabase> {
@@ -44,38 +49,29 @@ export class TCBDatabase {
     return TCBDatabase.instance;
   }
 
-  collection(name: string): tcb.Collection {
+  collection(name: string): any {
     return this.database.collection(name);
   }
 
-  async startTransaction(): Promise<tcb.Transaction> {
-    return this.database.startTransaction();
+  async startTransaction(): Promise<any> {
+    return (this.database as any).startTransaction();
   }
 
   async createCollectionsAndIndexes(): Promise<void> {
     try {
-      // Collections to create
+      // Collections to create (simplified 6-table design)
       const collections = [
         'users',
-        'identities',
-        'oauth_clients',
+        'identities', 
+        'clients',
         'auth_codes',
-        'refresh_tokens',
-        'login_states',
-        'sessions',
-        'roles',
-        'user_roles',
-        'jwk_keys',
-        'audits',
+        'tokens',
+        'jwks',
       ];
-
-      // Note: TCB doesn't have explicit collection creation
-      // Collections are created automatically on first document insert
-      // But we'll set up indexes here
 
       logger.info('Setting up TCB collection indexes...');
 
-      // Index definitions (these need to be created via TCB console or admin API)
+      // Index definitions (simplified 6-table design)
       const indexDefinitions = [
         // users collection
         { collection: 'users', field: 'createdAt', type: 'normal' },
@@ -86,30 +82,22 @@ export class TCBDatabase {
         { collection: 'identities', field: 'unionid', type: 'normal' },
         { collection: 'identities', field: 'userId', type: 'normal' },
 
-        // oauth_clients
-        { collection: 'oauth_clients', field: 'clientId', type: 'unique' },
+        // clients collection
+        { collection: 'clients', field: 'clientId', type: 'unique' },
 
         // auth_codes (with TTL)
         { collection: 'auth_codes', field: 'code', type: 'unique' },
         { collection: 'auth_codes', field: 'expiresAt', type: 'ttl', ttl: 0 },
 
-        // refresh_tokens
-        { collection: 'refresh_tokens', field: 'jti', type: 'unique' },
-        { collection: 'refresh_tokens', field: 'userId', type: 'normal' },
-        { collection: 'refresh_tokens', field: 'sessionId', type: 'normal' },
+        // tokens (combined access/refresh tokens)
+        { collection: 'tokens', field: 'jti', type: 'unique' },
+        { collection: 'tokens', field: 'userId', type: 'normal' },
+        { collection: 'tokens', field: 'sessionId', type: 'normal' },
+        { collection: 'tokens', field: 'refreshTokenJti', type: 'normal' },
 
-        // login_states (with TTL)
-        { collection: 'login_states', field: 'loginId', type: 'unique' },
-        { collection: 'login_states', field: 'expiresAt', type: 'ttl', ttl: 0 },
-
-        // sessions
-        { collection: 'sessions', field: 'userId', type: 'normal' },
-        { collection: 'sessions', field: 'revokedAt', type: 'normal' },
-
-        // audits
-        { collection: 'audits', field: 'actor', type: 'normal' },
-        { collection: 'audits', field: 'action', type: 'normal' },
-        { collection: 'audits', field: 'ts', type: 'normal' },
+        // jwks collection
+        { collection: 'jwks', field: 'keyId', type: 'unique' },
+        { collection: 'jwks', field: 'isActive', type: 'normal' },
       ];
 
       logger.info(
@@ -129,7 +117,7 @@ export class TCBDatabase {
   private async initializeDefaultData(): Promise<void> {
     try {
       // Check if default clients exist
-      const clientsCol = this.collection('oauth_clients');
+      const clientsCol = this.collection('clients');
       const existingClients = await clientsCol
         .where({ clientId: this._.in(['xjp-web', 'xjp-cli']) })
         .get();
@@ -158,31 +146,6 @@ export class TCBDatabase {
 
         logger.info('Default OAuth clients created');
       }
-
-      // Check if default roles exist
-      const rolesCol = this.collection('roles');
-      const existingRoles = await rolesCol
-        .where({ name: this._.in(['admin', 'user']) })
-        .get();
-
-      if (!existingRoles.data || existingRoles.data.length === 0) {
-        // Insert default roles
-        await rolesCol.add({
-          name: 'admin',
-          description: 'System Administrator',
-          permissions: ['users:*', 'sessions:*', 'audit:*'],
-          createdAt: new Date(),
-        });
-
-        await rolesCol.add({
-          name: 'user',
-          description: 'Standard User',
-          permissions: ['profile:read', 'profile:write', 'sessions:read'],
-          createdAt: new Date(),
-        });
-
-        logger.info('Default roles created');
-      }
     } catch (error) {
       logger.error(error, 'Failed to initialize default data');
     }
@@ -191,7 +154,7 @@ export class TCBDatabase {
   async healthCheck(): Promise<boolean> {
     try {
       // Simple read test
-      const result = await this.collection('oauth_clients')
+      const result = await this.collection('clients')
         .limit(1)
         .get();
       return true;

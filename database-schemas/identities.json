@@ -1,0 +1,74 @@
+{
+  "collectionName": "identities",
+  "description": "External identity providers (WeChat, etc)",
+  "indexes": [
+    {
+      "IndexName": "provider_openid_unique",
+      "MgoKeySchema": {
+        "MgoIndexKeys": [
+          {"Name": "provider", "Direction": "1"},
+          {"Name": "openid", "Direction": "1"}
+        ],
+        "MgoIsUnique": true
+      }
+    },
+    {
+      "IndexName": "unionid_index",
+      "MgoKeySchema": {
+        "MgoIndexKeys": [{"Name": "unionid", "Direction": "1"}],
+        "MgoIsUnique": false
+      }
+    },
+    {
+      "IndexName": "userId_index", 
+      "MgoKeySchema": {
+        "MgoIndexKeys": [{"Name": "userId", "Direction": "1"}],
+        "MgoIsUnique": false
+      }
+    }
+  ],
+  "fields": [
+    {
+      "fieldName": "_id",
+      "fieldType": "Object",
+      "isRequired": true,
+      "description": "Auto-generated document ID"
+    },
+    {
+      "fieldName": "userId",
+      "fieldType": "Object", 
+      "isRequired": true,
+      "description": "Reference to users table"
+    },
+    {
+      "fieldName": "provider",
+      "fieldType": "String",
+      "isRequired": true,
+      "description": "Identity provider (wechat, etc)"
+    },
+    {
+      "fieldName": "openid",
+      "fieldType": "String",
+      "isRequired": true,
+      "description": "Provider-specific user ID"
+    },
+    {
+      "fieldName": "unionid",
+      "fieldType": "String",
+      "isRequired": false,
+      "description": "WeChat union ID across apps"
+    },
+    {
+      "fieldName": "profile",
+      "fieldType": "Object",
+      "isRequired": false,
+      "description": "Provider profile data (nickname, avatar, etc)"
+    },
+    {
+      "fieldName": "createdAt",
+      "fieldType": "Date",
+      "isRequired": true,
+      "description": "Identity creation timestamp"
+    }
+  ]
+}

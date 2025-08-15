@@ -1,0 +1,89 @@
+{
+  "collectionName": "auth_codes",
+  "description": "OAuth 2.0 authorization codes with PKCE",
+  "indexes": [
+    {
+      "IndexName": "code_unique",
+      "MgoKeySchema": {
+        "MgoIndexKeys": [{"Name": "code", "Direction": "1"}],
+        "MgoIsUnique": true
+      }
+    },
+    {
+      "IndexName": "expiresAt_ttl",
+      "MgoKeySchema": {
+        "MgoIndexKeys": [{"Name": "expiresAt", "Direction": "1"}],
+        "MgoIsUnique": false,
+        "MgoExpireAfterSeconds": 0
+      }
+    }
+  ],
+  "fields": [
+    {
+      "fieldName": "_id",
+      "fieldType": "Object",
+      "isRequired": true,
+      "description": "Auto-generated document ID"
+    },
+    {
+      "fieldName": "code",
+      "fieldType": "String",
+      "isRequired": true,
+      "description": "Authorization code"
+    },
+    {
+      "fieldName": "clientId",
+      "fieldType": "String",
+      "isRequired": true,
+      "description": "OAuth client ID"
+    },
+    {
+      "fieldName": "userId",
+      "fieldType": "Object",
+      "isRequired": true,
+      "description": "Reference to users table"
+    },
+    {
+      "fieldName": "redirectUri",
+      "fieldType": "String",
+      "isRequired": true,
+      "description": "Redirect URI used in authorization"
+    },
+    {
+      "fieldName": "scopes",
+      "fieldType": "Array",
+      "isRequired": true,
+      "description": "Requested scopes"
+    },
+    {
+      "fieldName": "codeChallenge",
+      "fieldType": "String",
+      "isRequired": false,
+      "description": "PKCE code challenge"
+    },
+    {
+      "fieldName": "codeChallengeMethod",
+      "fieldType": "String",
+      "isRequired": false,
+      "description": "PKCE code challenge method"
+    },
+    {
+      "fieldName": "expiresAt",
+      "fieldType": "Date",
+      "isRequired": true,
+      "description": "Code expiration time (auto-delete)"
+    },
+    {
+      "fieldName": "createdAt",
+      "fieldType": "Date",
+      "isRequired": true,
+      "description": "Code creation timestamp"
+    },
+    {
+      "fieldName": "usedAt",
+      "fieldType": "Date",
+      "isRequired": false,
+      "description": "Code usage timestamp"
+    }
+  ]
+}

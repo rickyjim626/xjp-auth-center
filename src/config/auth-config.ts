@@ -3,12 +3,18 @@ import { secretStoreClient } from '../services/secret-store.client.js';
 import { logger } from '../utils/logger.js';
 import dotenv from 'dotenv';
 
-dotenv.config();
+// Load environment-specific .env file
+const env = process.env.NODE_ENV || process.env.ENV || 'development';
+if (env === 'production') {
+  dotenv.config({ path: '.env.production' });
+} else {
+  dotenv.config();
+}
 
 const authConfigSchema = z.object({
   env: z.enum(['development', 'staging', 'production']).default('development'),
   server: z.object({
-    port: z.number().default(3001),
+    port: z.number().default(3000),
     host: z.string().default('0.0.0.0'),
   }),
   tcb: z.object({
@@ -16,27 +22,52 @@ const authConfigSchema = z.object({
     secretId: z.string(),
     secretKey: z.string(),
     sessionToken: z.string().optional(),
+    region: z.string().default('ap-shanghai'),
   }),
   wechat: z.object({
-    appId: z.string(),
-    appSecret: z.string(),
+    // 开放平台网站应用（PC扫码登录）
+    openAppId: z.string(),
+    openAppSecret: z.string(),
+    // 公众号（微信内H5）
+    mpAppId: z.string(),
+    mpAppSecret: z.string(),
+    // 统一回调域名
     redirectUri: z.string(),
+    // UnionID支持
+    useUnionId: z.boolean().default(true),
   }),
   jwt: z.object({
     issuer: z.string(),
+    kid: z.string().default('kid-2025-01'),
+    privateKey: z.string(),
+    publicKey: z.string().optional(),
+    publicJwks: z.any().optional(),
     accessTokenExpires: z.string().default('15m'),
     refreshTokenExpires: z.string().default('30d'),
-    privateKey: z.string().optional(),
-    publicJwks: z.any().optional(),
+    idTokenExpires: z.string().default('1h'),
+  }),
+  oidc: z.object({
+    // PKCE配置
+    requirePKCE: z.boolean().default(true),
+    // 授权码过期时间（秒）
+    authCodeExpires: z.number().default(600),
+  }),
+  cookie: z.object({
+    secret: z.string(),
+    secure: z.boolean().default(true),
+    sameSite: z.enum(['strict', 'lax', 'none']).default('lax'),
+    sessionExpires: z.number().default(86400000), // 24小时
   }),
   security: z.object({
     corsOrigin: z.array(z.string()),
     rateLimitMax: z.number().default(100),
     rateLimitWindow: z.number().default(60000),
+    csrfProtection: z.boolean().default(true),
   }),
   secretStore: z.object({
-    url: z.string(),
-    apiKey: z.string(),
+    useSecretStore: z.boolean().default(false),
+    url: z.string().optional(),
+    apiKey: z.string().optional(),
   }),
 });
 
@@ -120,7 +151,7 @@ class ConfigLoader {
       return {
         env: process.env.ENV || configs.ENV || 'production',
         server: {
-          port: parseInt(process.env.PORT || '3001'),
+          port: parseInt(process.env.PORT || '3000'),
           host: process.env.HOST || '0.0.0.0',
         },
         tcb: {
@@ -128,25 +159,44 @@ class ConfigLoader {
           secretId: secrets.TENCENTCLOUD_SECRETID,
           secretKey: secrets.TENCENTCLOUD_SECRETKEY,
           sessionToken: secrets.TENCENTCLOUD_SESSIONTOKEN,
+          region: configs.TCB_REGION || 'ap-shanghai',
         },
         wechat: {
-          appId: secrets.WECHAT_WEB_APPID,
-          appSecret: secrets.WECHAT_WEB_APPSECRET,
-          redirectUri: configs.WECHAT_REDIRECT_URI || 'https://auth.xiaojinpro.com/auth/wechat/callback',
+          openAppId: secrets.WECHAT_OPEN_APPID,
+          openAppSecret: secrets.WECHAT_OPEN_SECRET,
+          mpAppId: secrets.WECHAT_MP_APPID,
+          mpAppSecret: secrets.WECHAT_MP_SECRET,
+          redirectUri: configs.WECHAT_REDIRECT_URI || 'https://auth.xiaojinpro.com/wechat/callback',
+          useUnionId: configs.USE_UNIONID !== 'false',
         },
         jwt: {
           issuer: configs.ISSUER || 'https://auth.xiaojinpro.com',
+          kid: configs.JWT_KID || 'kid-2025-01',
+          privateKey: secrets.JWT_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+          publicKey: secrets.JWT_PUBLIC_KEY?.replace(/\\n/g, '\n'),
+          publicJwks: publicJwks,
           accessTokenExpires: configs.JWT_ACCESS_TOKEN_EXPIRES || '15m',
           refreshTokenExpires: configs.JWT_REFRESH_TOKEN_EXPIRES || '30d',
-          privateKey: secrets.JWT_PRIVATE_KEY,
-          publicJwks,
+          idTokenExpires: configs.JWT_ID_TOKEN_EXPIRES || '1h',
+        },
+        oidc: {
+          requirePKCE: configs.REQUIRE_PKCE !== 'false',
+          authCodeExpires: parseInt(configs.AUTH_CODE_EXPIRES || '600'),
+        },
+        cookie: {
+          secret: secrets.COOKIE_SECRET || configs.COOKIE_SECRET,
+          secure: configs.COOKIE_SECURE !== 'false',
+          sameSite: (configs.COOKIE_SAME_SITE as 'strict' | 'lax' | 'none') || 'lax',
+          sessionExpires: parseInt(configs.SESSION_EXPIRES || '86400000'),
         },
         security: {
           corsOrigin,
           rateLimitMax: parseInt(configs.RATE_LIMIT_MAX || '100'),
           rateLimitWindow: parseInt(configs.RATE_LIMIT_WINDOW || '60000'),
+          csrfProtection: configs.CSRF_PROTECTION !== 'false',
         },
         secretStore: {
+          useSecretStore: true,
           url: process.env.SECRET_STORE_URL || 'https://yzuukzffofsw.sg-members-1.clawcloudrun.com',
           apiKey: process.env.XJP_KEY_AUTH || '',
         },
@@ -163,33 +213,53 @@ class ConfigLoader {
       : ['http://localhost:3000', 'http://localhost:3001'];
 
     return {
-      env: process.env.ENV || 'development',
+      env: process.env.NODE_ENV || process.env.ENV || 'development',
       server: {
-        port: parseInt(process.env.PORT || '3001'),
+        port: parseInt(process.env.PORT || '3000'),
         host: process.env.HOST || '0.0.0.0',
       },
       tcb: {
-        envId: process.env.TCB_ENV_ID || '',
+        envId: process.env.TCB_ENV_ID || 'xiaojinpro-5ghvhq9v9875c1ea',
         secretId: process.env.TENCENTCLOUD_SECRETID || '',
         secretKey: process.env.TENCENTCLOUD_SECRETKEY || '',
         sessionToken: process.env.TENCENTCLOUD_SESSIONTOKEN,
+        region: process.env.TCB_REGION || 'ap-shanghai',
       },
       wechat: {
-        appId: process.env.WECHAT_WEB_APPID || '',
-        appSecret: process.env.WECHAT_WEB_APPSECRET || '',
-        redirectUri: process.env.WECHAT_REDIRECT_URI || 'http://localhost:3001/auth/wechat/callback',
+        openAppId: process.env.WECHAT_OPEN_APPID || '',
+        openAppSecret: process.env.WECHAT_OPEN_SECRET || '',
+        mpAppId: process.env.WECHAT_MP_APPID || '',
+        mpAppSecret: process.env.WECHAT_MP_SECRET || '',
+        redirectUri: process.env.WECHAT_REDIRECT_URI || 'https://auth.xiaojinpro.com/wechat/callback',
+        useUnionId: process.env.USE_UNIONID !== 'false',
       },
       jwt: {
-        issuer: process.env.ISSUER || 'http://localhost:3001',
+        issuer: process.env.ISSUER || 'https://auth.xiaojinpro.com',
+        kid: process.env.JWT_KID || 'kid-2025-01',
+        privateKey: process.env.JWT_PRIVATE_KEY?.replace(/\\n/g, '\n') || '',
+        publicKey: process.env.JWT_PUBLIC_KEY?.replace(/\\n/g, '\n'),
         accessTokenExpires: process.env.JWT_ACCESS_TOKEN_EXPIRES || '15m',
         refreshTokenExpires: process.env.JWT_REFRESH_TOKEN_EXPIRES || '30d',
+        idTokenExpires: process.env.JWT_ID_TOKEN_EXPIRES || '1h',
+      },
+      oidc: {
+        requirePKCE: process.env.REQUIRE_PKCE !== 'false',
+        authCodeExpires: parseInt(process.env.AUTH_CODE_EXPIRES || '600'),
+      },
+      cookie: {
+        secret: process.env.COOKIE_SECRET || 'a-strong-random-string',
+        secure: process.env.COOKIE_SECURE !== 'false',
+        sameSite: (process.env.COOKIE_SAME_SITE as 'strict' | 'lax' | 'none') || 'lax',
+        sessionExpires: parseInt(process.env.SESSION_EXPIRES || '86400000'),
       },
       security: {
         corsOrigin,
         rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || '100'),
         rateLimitWindow: parseInt(process.env.RATE_LIMIT_WINDOW || '60000'),
+        csrfProtection: process.env.CSRF_PROTECTION !== 'false',
       },
       secretStore: {
+        useSecretStore: process.env.USE_SECRET_STORE === 'true',
         url: process.env.SECRET_STORE_URL || '',
         apiKey: process.env.XJP_KEY_AUTH || '',
       },

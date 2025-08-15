@@ -7,6 +7,9 @@ import { logger } from './utils/logger.js';
 import { jwtServiceTCB } from './services/jwt.service.tcb.js';
 import { authRoutesTCB } from './routes/auth.routes.tcb.js';
 import { oauthRoutesTCB } from './routes/oauth.routes.tcb.js';
+import { oidcRoutes } from './routes/oidc.routes.js';
+import { wechatRoutes } from './routes/wechat.routes.js';
+import { usersRoutesTCB } from './routes/users.routes.tcb.js';
 import { TCBDatabase } from './db/tcb-client.js';
 import { secretStoreClient } from './services/secret-store.client.js';
 
@@ -14,7 +17,7 @@ export async function createApp() {
   const config = await getConfig();
   
   const fastify = Fastify({
-    logger: logger,
+    logger: logger as any,
     trustProxy: true,
     requestIdHeader: 'x-request-id',
     requestIdLogLabel: 'reqId',
@@ -53,7 +56,6 @@ export async function createApp() {
     max: config.security.rateLimitMax,
     timeWindow: config.security.rateLimitWindow,
     cache: 10000,
-    skipSuccessfulRequests: false,
     keyGenerator: (request) => {
       return request.headers['x-forwarded-for'] as string || 
              request.socket.remoteAddress || 
@@ -67,45 +69,38 @@ export async function createApp() {
     },
   });
 
-  // Health check
-  fastify.get('/health', async (request, reply) => {
-    const tcbDb = TCBDatabase.getInstance();
-    const dbHealthy = await tcbDb.healthCheck();
-    
-    let secretStoreHealthy = true;
-    if (config.secretStore.apiKey) {
-      const result = await secretStoreClient.healthCheck();
-      secretStoreHealthy = result.status === 'healthy';
-    }
-    
-    const allHealthy = dbHealthy && secretStoreHealthy;
-    const status = allHealthy ? 200 : 503;
-    
-    return reply.code(status).send({
-      status: allHealthy ? 'healthy' : 'unhealthy',
+  // Health check endpoints
+  fastify.get('/health/live', async (request, reply) => {
+    // Simple liveness check - app is running
+    return reply.send('OK');
+  });
+
+  fastify.get('/health/ready', async (request, reply) => {
+    // Readiness check - app is ready to serve traffic
+    // Don't check external dependencies to avoid cascading failures
+    return reply.send({ 
+      ok: true,
       timestamp: new Date().toISOString(),
-      services: {
-        tcb: dbHealthy ? 'connected' : 'disconnected',
-        secretStore: secretStoreHealthy ? 'connected' : 'disconnected',
-      },
+      environment: config.env,
+      issuer: config.jwt.issuer,
     });
   });
 
-  // Ready check
+  // Backward compatibility
+  fastify.get('/health', async (request, reply) => {
+    return reply.redirect('/health/ready');
+  });
+
   fastify.get('/ready', async (request, reply) => {
-    const tcbDb = TCBDatabase.getInstance();
-    const dbHealthy = await tcbDb.healthCheck();
-    
-    if (!dbHealthy) {
-      return reply.code(503).send({ ready: false });
-    }
-    
-    return reply.send({ ready: true });
+    return reply.redirect('/health/ready');
   });
 
   // Register routes
   await fastify.register(authRoutesTCB);
   await fastify.register(oauthRoutesTCB);
+  await fastify.register(oidcRoutes);
+  await fastify.register(wechatRoutes);
+  await fastify.register(usersRoutesTCB);
 
   // Error handler
   fastify.setErrorHandler((error, request, reply) => {

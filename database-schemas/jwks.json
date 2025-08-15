@@ -1,0 +1,77 @@
+{
+  "collectionName": "jwks",
+  "description": "JSON Web Key Set for JWT signing/verification",
+  "indexes": [
+    {
+      "IndexName": "keyId_unique",
+      "MgoKeySchema": {
+        "MgoIndexKeys": [{"Name": "keyId", "Direction": "1"}],
+        "MgoIsUnique": true
+      }
+    },
+    {
+      "IndexName": "isActive_index",
+      "MgoKeySchema": {
+        "MgoIndexKeys": [{"Name": "isActive", "Direction": "1"}],
+        "MgoIsUnique": false
+      }
+    }
+  ],
+  "fields": [
+    {
+      "fieldName": "_id",
+      "fieldType": "Object",
+      "isRequired": true,
+      "description": "Auto-generated document ID"
+    },
+    {
+      "fieldName": "keyId",
+      "fieldType": "String",
+      "isRequired": true,
+      "description": "Key identifier (kid)"
+    },
+    {
+      "fieldName": "keyType",
+      "fieldType": "String",
+      "isRequired": true,
+      "description": "Key type (RSA)"
+    },
+    {
+      "fieldName": "algorithm",
+      "fieldType": "String",
+      "isRequired": true,
+      "description": "Signing algorithm (RS256)"
+    },
+    {
+      "fieldName": "publicKey",
+      "fieldType": "String",
+      "isRequired": true,
+      "description": "PEM-encoded public key"
+    },
+    {
+      "fieldName": "privateKey",
+      "fieldType": "String",
+      "isRequired": true,
+      "description": "PEM-encoded private key"
+    },
+    {
+      "fieldName": "isActive",
+      "fieldType": "Boolean",
+      "isRequired": true,
+      "defaultValue": true,
+      "description": "Key active status"
+    },
+    {
+      "fieldName": "createdAt",
+      "fieldType": "Date",
+      "isRequired": true,
+      "description": "Key creation timestamp"
+    },
+    {
+      "fieldName": "rotatedAt",
+      "fieldType": "Date",
+      "isRequired": false,
+      "description": "Key rotation timestamp"
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "envId": "xiaojinpro-5ghvhq9v9875c1ea",
+  "framework": {
+    "name": "auth-center",
+    "plugins": {
+      "container": {
+        "use": "@cloudbase/framework-plugin-container",
+        "inputs": {
+          "serviceName": "auth-center",
+          "servicePath": "/",
+          "uploadType": "package",
+          "buildDir": "./",
+          "dockerfilePath": "./Dockerfile",
+          "containerPort": 3000,
+          "isPublic": true,
+          "mode": "high-availability",
+          "cpu": 0.5,
+          "mem": 1,
+          "minNum": 1,
+          "maxNum": 3,
+          "policyType": "cpu",
+          "policyThreshold": 60,
+          "initialDelaySeconds": 30,
+          "envVariables": {
+            "NODE_ENV": "production",
+            "ENV": "production",
+            "PORT": "3000",
+            "HOST": "0.0.0.0",
+            "TCB_ENV_ID": "xiaojinpro-5ghvhq9v9875c1ea",
+            "USE_SECRET_STORE": "false",
+            "ISSUER": "https://auth.xiaojinpro.com",
+            "WECHAT_OPEN_APPID": "",
+            "WECHAT_OPEN_SECRET": "",
+            "WECHAT_MP_APPID": "",
+            "WECHAT_MP_SECRET": "",
+            "WECHAT_REDIRECT_URI": "https://auth.xiaojinpro.com/wechat/callback",
+            "USE_UNIONID": "true",
+            "JWT_PRIVATE_KEY": "",
+            "JWT_KID": "kid-2025-01",
+            "JWT_ACCESS_TOKEN_EXPIRES": "15m",
+            "JWT_REFRESH_TOKEN_EXPIRES": "30d",
+            "JWT_ID_TOKEN_EXPIRES": "1h",
+            "COOKIE_SECRET": "",
+            "COOKIE_SECURE": "true",
+            "COOKIE_SAME_SITE": "lax",
+            "SESSION_EXPIRES": "86400000",
+            "REQUIRE_PKCE": "true",
+            "AUTH_CODE_EXPIRES": "600",
+            "RATE_LIMIT_MAX": "100",
+            "RATE_LIMIT_WINDOW": "60000",
+            "CSRF_PROTECTION": "true",
+            "TENCENTCLOUD_SECRETID": "",
+            "TENCENTCLOUD_SECRETKEY": "",
+            "CORS_ORIGIN": "https://xiaojinpro.com,https://*.xiaojinpro.com"
+          },
+          "ignore": [
+            ".git",
+            ".github/**",
+            "node_modules/**",
+            "**/*.test.*",
+            "**/__tests__/**",
+            "*.md",
+            ".env*",
+            "src/**",
+            "tsconfig.json",
+            "scripts/**"
+          ],
+          "healthCheck": {
+            "path": "/health/ready",
+            "interval": 30,
+            "timeout": 3,
+            "retries": 3,
+            "initialDelaySeconds": 30
+          },
+          "customDomains": [
+            {
+              "domain": "auth.xiaojinpro.com",
+              "certId": "",
+              "pathMappingList": [
+                {
+                  "path": "/",
+                  "targetPath": "/"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  "cloudrun": {
+    "name": "auth-center"
+  }
+}

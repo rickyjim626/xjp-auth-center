@@ -87,18 +87,13 @@ export async function authRoutesTCB(fastify: FastifyInstance) {
       
       sseService.addClient(query.loginId, reply);
 
-      // Check current status
-      const status = await wechatServiceTCB.getLoginTicketStatus(query.loginId);
-      if (status.status === 'SUCCESS') {
-        sseService.broadcastLoginStatus(query.loginId, 'SUCCESS', status.result);
-      } else if (status.status === 'FAIL' || status.status === 'TIMEOUT') {
-        sseService.broadcastLoginStatus(query.loginId, status.status, status.result);
-      }
-
       // Keep connection open
       request.socket.on('close', () => {
         sseService.removeClient(query.loginId);
       });
+      
+      // Keep the response open for SSE
+      return;
     } catch (error) {
       logger.error(error, 'SSE stream setup failed');
       return reply.code(400).send({
@@ -113,8 +108,12 @@ export async function authRoutesTCB(fastify: FastifyInstance) {
     const { loginId } = request.params as { loginId: string };
     
     try {
-      const status = await wechatServiceTCB.getLoginTicketStatus(loginId);
-      return reply.send(status);
+      // With stateless design, we don't track login tickets
+      // Just return a generic response
+      return reply.send({
+        status: 'PENDING',
+        message: 'Login status tracking not available in stateless mode'
+      });
     } catch (error) {
       logger.error(error, 'Failed to get login status');
       return reply.code(500).send({

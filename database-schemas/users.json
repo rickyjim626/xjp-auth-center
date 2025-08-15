@@ -1,0 +1,72 @@
+{
+  "collectionName": "users", 
+  "description": "Core user accounts table",
+  "indexes": [
+    {
+      "IndexName": "createdAt_index",
+      "MgoKeySchema": {
+        "MgoIndexKeys": [{"Name": "createdAt", "Direction": "1"}],
+        "MgoIsUnique": false
+      }
+    },
+    {
+      "IndexName": "isDisabled_index", 
+      "MgoKeySchema": {
+        "MgoIndexKeys": [{"Name": "isDisabled", "Direction": "1"}],
+        "MgoIsUnique": false
+      }
+    }
+  ],
+  "fields": [
+    {
+      "fieldName": "_id",
+      "fieldType": "Object",
+      "isRequired": true,
+      "description": "Auto-generated document ID"
+    },
+    {
+      "fieldName": "displayName",
+      "fieldType": "String", 
+      "isRequired": true,
+      "description": "User display name"
+    },
+    {
+      "fieldName": "email",
+      "fieldType": "String",
+      "isRequired": false,
+      "description": "User email address"
+    },
+    {
+      "fieldName": "avatar",
+      "fieldType": "String",
+      "isRequired": false, 
+      "description": "Avatar URL"
+    },
+    {
+      "fieldName": "isAdmin",
+      "fieldType": "Boolean",
+      "isRequired": true,
+      "defaultValue": false,
+      "description": "Simple admin flag"
+    },
+    {
+      "fieldName": "isDisabled",
+      "fieldType": "Boolean", 
+      "isRequired": true,
+      "defaultValue": false,
+      "description": "Account disabled status"
+    },
+    {
+      "fieldName": "createdAt",
+      "fieldType": "Date",
+      "isRequired": true,
+      "description": "Account creation timestamp"
+    },
+    {
+      "fieldName": "lastLoginAt",
+      "fieldType": "Date",
+      "isRequired": false,
+      "description": "Last login timestamp"
+    }
+  ]
+}

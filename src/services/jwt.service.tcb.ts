@@ -10,6 +10,7 @@ interface TokenPayload {
   unionid?: string;
   openid?: string;
   roles?: string[];
+  scope?: string;
   scopes?: string[];
   clientId?: string;
   sessionId?: string;
@@ -56,14 +57,19 @@ export class JWTServiceTCB {
       }
 
       // Otherwise check database for existing keys
-      const activeKey = await findOne('jwk_keys', {
-        disabledAt: null,
+      const activeKey = await findOne('jwks', {
+        isActive: true,
       });
 
-      if (activeKey && activeKey.privateJwk?.d) {
-        this.currentKid = activeKey.kid;
-        this.privateKey = jose.base64url.decode(activeKey.privateJwk.d);
-        this.publicKey = jose.base64url.decode(activeKey.privateJwk.x);
+      if (activeKey && activeKey.privateKey) {
+        this.currentKid = activeKey.keyId;
+        // Convert PEM format to Ed25519 key
+        const keyData = activeKey.privateKey
+          .replace(/-----BEGIN PRIVATE KEY-----/, '')
+          .replace(/-----END PRIVATE KEY-----/, '')
+          .replace(/\s/g, '');
+        this.privateKey = jose.base64url.decode(keyData).slice(-32);
+        this.publicKey = await ed.getPublicKeyAsync(this.privateKey);
         logger.info({ kid: this.currentKid }, 'Loaded existing JWK key pair from database');
       } else {
         await this.generateNewKeyPair();
@@ -120,29 +126,19 @@ export class JWTServiceTCB {
     this.publicKey = await ed.getPublicKeyAsync(this.privateKey);
     this.currentKid = `key_${generateRandomId(16)}`;
 
-    const publicJwk = {
-      kty: 'OKP',
-      crv: 'Ed25519',
-      x: jose.base64url.encode(this.publicKey),
-      use: 'sig',
-      alg: 'EdDSA',
-      kid: this.currentKid,
-    };
-
-    const privateJwk = {
-      ...publicJwk,
-      d: jose.base64url.encode(this.privateKey),
-    };
+    // Convert to PEM format for storage
+    const privateKeyPem = `-----BEGIN PRIVATE KEY-----\n${jose.base64url.encode(this.privateKey)}\n-----END PRIVATE KEY-----`;
+    const publicKeyPem = `-----BEGIN PUBLIC KEY-----\n${jose.base64url.encode(this.publicKey)}\n-----END PUBLIC KEY-----`;
 
     // Store in database
-    await insertOne('jwk_keys', {
-      kid: this.currentKid,
-      alg: 'EdDSA',
-      use: 'sig',
-      publicJwk,
-      privateJwk,
+    await insertOne('jwks', {
+      keyId: this.currentKid,
+      keyType: 'Ed25519',
+      algorithm: 'EdDSA',
+      publicKey: publicKeyPem,
+      privateKey: privateKeyPem,
+      isActive: true,
       createdAt: new Date(),
-      disabledAt: null,
     });
 
     logger.info({ kid: this.currentKid }, 'Generated new Ed25519 key pair');
@@ -234,17 +230,24 @@ export class JWTServiceTCB {
     const now = new Date();
     const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    const keys = await findMany('jwk_keys', {
+    const keys = await findMany('jwks', {
       $or: [
-        { disabledAt: null },
-        { disabledAt: db._.gt(dayAgo) },
+        { isActive: true },
+        { rotatedAt: db._.gt(dayAgo) },
       ],
     }, {
       orderBy: { field: 'createdAt', order: 'desc' },
     });
 
     return {
-      keys: keys.map(k => k.publicJwk),
+      keys: keys.map(k => ({
+        kid: k.keyId,
+        kty: 'OKP',
+        crv: 'Ed25519', 
+        alg: k.algorithm,
+        use: 'sig',
+        x: jose.base64url.encode(jose.base64url.decode(k.publicKey.replace(/-----BEGIN PUBLIC KEY-----\n?/, '').replace(/\n?-----END PUBLIC KEY-----/, '').replace(/\s/g, ''))),
+      })),
     };
   }
 
@@ -272,8 +275,8 @@ export class JWTServiceTCB {
       throw new Error(`Invalid expiry format: ${expiry}`);
     }
 
-    const value = parseInt(match[1]);
-    const unit = match[2];
+    const value = parseInt(match[1] || '0');
+    const unit = match[2] || 's';
 
     switch (unit) {
       case 's':
@@ -294,14 +297,73 @@ export class JWTServiceTCB {
     
     // Disable current key (keep for verification for 24h)
     if (this.currentKid) {
-      const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      await db.collection('jwk_keys')
-        .where({ kid: this.currentKid })
-        .update({ disabledAt: futureDate });
+      await db.collection('jwks')
+        .where({ keyId: this.currentKid })
+        .update({ 
+          isActive: false,
+          rotatedAt: new Date(),
+        });
     }
 
     // Generate new key pair
     await this.generateNewKeyPair();
+  }
+
+  // Alias methods for compatibility with oidc.routes.ts
+  async getPublicJWKS(): Promise<{ keys: JWK[] }> {
+    return this.getJWKS();
+  }
+
+  async generateTokens(payload: TokenPayload): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    idToken: string;
+  }> {
+    const accessToken = await this.signAccessToken(payload);
+    const { token: refreshToken } = await this.signRefreshToken(payload);
+    const idToken = await this.signIdToken(payload);
+    return { accessToken, refreshToken, idToken };
+  }
+
+  async signIdToken(payload: TokenPayload): Promise<string> {
+    if (!this.privateKey || !this.currentKid) {
+      await this.ensureKeyPair();
+    }
+
+    const config = await getConfig();
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now + this.parseExpiry(config.jwt.idTokenExpires);
+
+    const claims = {
+      iss: config.jwt.issuer,
+      sub: payload.userId,
+      aud: payload.clientId || 'xiaojinpro',
+      exp,
+      iat: now,
+      nbf: now,
+      nonce: generateRandomId(16),
+      ...(payload.unionid && { 'xjp.wechat.unionid': payload.unionid }),
+      ...(payload.openid && { 'xjp.wechat.openid': payload.openid }),
+    };
+
+    const jwt = await new jose.SignJWT(claims)
+      .setProtectedHeader({ alg: 'EdDSA', kid: this.currentKid! })
+      .sign(await this.getSigningKey());
+
+    return jwt;
+  }
+
+  async verifyAccessToken(token: string): Promise<any> {
+    const result = await this.verifyToken(token);
+    return result.payload;
+  }
+
+  async verifyRefreshToken(token: string): Promise<any> {
+    const result = await this.verifyToken(token);
+    if (result.payload.type !== 'refresh') {
+      throw new Error('Invalid token type');
+    }
+    return result.payload;
   }
 }
 

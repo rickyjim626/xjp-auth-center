@@ -1,0 +1,65 @@
+{
+  "collectionName": "clients",
+  "description": "OAuth 2.0 clients",
+  "indexes": [
+    {
+      "IndexName": "clientId_unique",
+      "MgoKeySchema": {
+        "MgoIndexKeys": [{"Name": "clientId", "Direction": "1"}],
+        "MgoIsUnique": true
+      }
+    }
+  ],
+  "fields": [
+    {
+      "fieldName": "_id",
+      "fieldType": "Object",
+      "isRequired": true,
+      "description": "Auto-generated document ID"
+    },
+    {
+      "fieldName": "clientId",
+      "fieldType": "String",
+      "isRequired": true,
+      "description": "OAuth client identifier"
+    },
+    {
+      "fieldName": "name",
+      "fieldType": "String",
+      "isRequired": true,
+      "description": "Client display name"
+    },
+    {
+      "fieldName": "redirectUris",
+      "fieldType": "Array",
+      "isRequired": true,
+      "description": "Allowed redirect URIs"
+    },
+    {
+      "fieldName": "firstParty",
+      "fieldType": "Boolean",
+      "isRequired": true,
+      "defaultValue": false,
+      "description": "First-party client flag"
+    },
+    {
+      "fieldName": "allowedScopes",
+      "fieldType": "Array",
+      "isRequired": true,
+      "description": "Allowed OAuth scopes"
+    },
+    {
+      "fieldName": "isDisabled",
+      "fieldType": "Boolean",
+      "isRequired": true,
+      "defaultValue": false,
+      "description": "Client disabled status"
+    },
+    {
+      "fieldName": "createdAt",
+      "fieldType": "Date",
+      "isRequired": true,
+      "description": "Client creation timestamp"
+    }
+  ]
+}
